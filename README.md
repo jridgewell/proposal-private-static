@@ -181,4 +181,130 @@ While this does solve the usecase, it's not particularly ergonomic. Keeping an u
 
 Still, I would much rather declare a variable and initialize it in the same stroke (`let x; /* ... */ x = 1` vs `let x = 1; /* ... */`).
 
+### Local Lexical Bindings
+
+Local lexical bindings allow you to define functions and variables inside the `ClassBody`.
+
+```js
+class C {
+  #x;
+
+  function getter(obj) {
+    return obj.#x;
+  }
+  function setter(obj, value) {
+    obj.#x = value;
+  }
+}
+```
+
+<details>
+  
+<summary>Core usecase with static initializer blocks</summary>
+
+```js
+export const registry = new JSDOMRegistry();
+
+export class JSDOM {
+  #createdBy;
+
+  #registerWithRegistry() {
+    // ... elided ...
+  }
+
+  async static fromURL(url, options = {}) {
+    normalizeFromURLOptions(options);
+    normalizeOptions(options);
+
+    const body = await getBodyFromURL(url);
+    return finalizeFactoryCreated(new JSDOM(body, options), "fromURL");
+  }
+
+  static fromFile(filename, options = {}) {
+    normalizeOptions(options);
+
+    const body = await getBodyFromFilename(filename);
+    return finalizeFactoryCreated(new JSDOM(body, options), "fromFile");
+  }
+
+  function finalizeFactoryCreated(jsdom, factoryName) {
+    jsdom.#createdBy = factoryName;
+    jsdom.#registerWithRegistry(registry);
+    return jsdom;
+  }
+}
+```
+
+</details>
+
+This proposal suffers from confusing syntax. It's not entirely clear from the syntax that these are not instances fields/methdos. It's also not clear why only declarations are supported and not arbitrary expressions.
+
 ### Classes 1.1
+
+The Classes 1.1 proposal is a re-imaging the current fields syntax to
+create a "maximally minimal syntax".
+
+```js
+class C {
+  var x;
+  hidden getter() {
+    return this->x;
+  }
+  hidden setter(value) {
+    this->x = value;
+  }
+
+  static {
+    // Arbitrary code here
+  }
+}
+```
+
+<details>
+
+<summary>Core usecase with static initializer blocks</summary>
+
+```js
+export const registry = new JSDOMRegistry();
+
+export class JSDOM {
+  #createdBy;
+
+  #registerWithRegistry() {
+    // ... elided ...
+  }
+
+  async static fromURL(url, options = {}) {
+    normalizeFromURLOptions(options);
+    normalizeOptions(options);
+
+    const body = await getBodyFromURL(url);
+    return this->finalizeFactoryCreated(new JSDOM(body, options), "fromURL");
+  }
+
+  static fromFile(filename, options = {}) {
+    normalizeOptions(options);
+
+    const body = await getBodyFromFilename(filename);
+    return this->finalizeFactoryCreated(new JSDOM(body, options), "fromFile");
+  }
+
+  hidden finalizeFactoryCreated(jsdom, factoryName) {
+    jsdom.#createdBy = factoryName;
+    jsdom.#registerWithRegistry(registry);
+    return jsdom;
+  }
+}
+```
+
+</details>
+
+This is essentially a combination of the previous two proposals. For the
+core usecase, the static block initializer is largely unnecessary since
+we have `hidden` lexical functions. Unfortunately, this lexical
+functions have **very** confusing semantics. The left-hand side of the
+`->` (pointer arrow) can be _anything_ (eg, `"hello"->x`, which will
+call the hidden lexical `x` with `"hello"` as the `this` context), but
+the function is resolved lexically. This totally breaks from the `obj.x`
+object-resolve lookup JavaScript developer familiar with, and the normal
+lexically-resolved `x` lookup.
